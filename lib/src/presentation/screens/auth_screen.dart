@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sample_capture_app/src/services/passkey_service.dart';
+import 'package:sample_capture_app/src/services/user_service.dart';
+import 'package:sample_capture_app/src/services/api_service.dart';
 
 /// Passkey 註冊畫面
 class AuthScreen extends ConsumerStatefulWidget {
@@ -42,27 +44,37 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
+    final username = _usernameController.text.trim();
+    final displayName = _displayNameController.text.trim();
 
     try {
-      // 步驟 1: 準備註冊數據
-      messenger.showSnackBar(const SnackBar(content: Text('步驟 1/2: 正在準備註冊數據...')));
-      final registrationChallenge = {
-        'username': _usernameController.text.trim(),
-        'displayName': _displayNameController.text.trim(),
-        'challenge': _generateChallenge(),
-      };
+      // 步驟 1: 向後端請求註冊挑戰
+      messenger.showSnackBar(const SnackBar(content: Text('步驟 1/3: 正在準備註冊數據...')));
+      final registrationChallenge = await ref
+          .read(apiServiceProvider)
+          .initiateRegistration(username, displayName);
 
       // 步驟 2: 呼叫 Passkey 服務，觸發原生 UI (指紋/臉部辨識)
-      messenger.showSnackBar(const SnackBar(content: Text('步驟 2/2: 請依照系統提示完成驗證...')));
+      messenger.showSnackBar(const SnackBar(content: Text('步驟 2/3: 請依照系統提示完成驗證...')));
       final credential = await ref
           .read(passkeyServiceProvider)
           .register(registrationChallenge: registrationChallenge);
+      
+      // 步驟 3: 將註冊結果發送到後端
+      messenger.showSnackBar(const SnackBar(content: Text('步驟 3/3: 正在完成註冊...')));
+      await ref.read(apiServiceProvider).completeRegistration(credential);
+      
+      // 註冊成功後，設置當前用戶
+      await ref.read(userServiceProvider).setCurrentUser(
+        email: username,
+        authResponse: credential,
+      );
 
       messenger.showSnackBar(const SnackBar(
         content: Text('🎉 Passkey 註冊成功！'),
         backgroundColor: Colors.green,
       ));
-      navigator.pop(); // 註冊成功後返回首頁
+      navigator.pushNamedAndRemoveUntil('/', (route) => false); // 註冊成功後返回首頁
     } catch (e) {
       messenger.showSnackBar(SnackBar(
         content: Text('❌ 註冊失敗: $e'),

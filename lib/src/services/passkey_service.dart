@@ -44,18 +44,89 @@ class PasskeyService {
       
       _logger.info('[PasskeyService] 使用用戶名: $username');
       
-      // 創建註冊請求
-      final request = _createRegisterRequest(
-        username: username,
-        displayName: displayName,
-        challenge: registrationChallenge['challenge'] ?? _generateChallenge(),
-      );
+      // 檢查是否已經是 WebAuthn 格式的挑戰
+      if (registrationChallenge.containsKey('rp') && 
+          registrationChallenge.containsKey('user') && 
+          registrationChallenge.containsKey('challenge')) {
+        
+        _logger.info('[PasskeyService] 使用完整的 WebAuthn 挑戰...');
+        
+        // 手動創建 RegisterRequestType 實例
+        final rp = RelyingPartyType(
+          name: registrationChallenge['rp']['name'],
+          id: registrationChallenge['rp']['id'],
+        );
+        
+        final user = UserType(
+          displayName: registrationChallenge['user']['displayName'],
+          name: registrationChallenge['user']['name'],
+          id: registrationChallenge['user']['id'],
+        );
+        
+        final authSelectionType = AuthenticatorSelectionType(
+          requireResidentKey: registrationChallenge['authenticatorSelection']['requireResidentKey'] ?? false,
+          residentKey: registrationChallenge['authenticatorSelection']['residentKey'] ?? 'required',
+          userVerification: registrationChallenge['authenticatorSelection']['userVerification'] ?? 'preferred',
+        );
+        
+        final pubKeyCredParams = (registrationChallenge['pubKeyCredParams'] as List)
+            .map((param) => PubKeyCredParamType(
+                  type: param['type'],
+                  alg: param['alg'],
+                ))
+            .toList();
+        
+        final request = RegisterRequestType(
+          challenge: registrationChallenge['challenge'],
+          relyingParty: rp,
+          user: user,
+          authSelectionType: authSelectionType,
+          pubKeyCredParams: pubKeyCredParams,
+          excludeCredentials: [],
+          timeout: registrationChallenge['timeout'] ?? 60000,
+        );
+        
+        // 使用 PasskeyAuthenticator API 註冊
+        final registerResponse = await _authenticator.register(request);
+        
+        // 將 RegisterResponseType 轉換為 Map
+        final responseMap = <String, dynamic>{
+          'id': registerResponse.id,
+          'rawId': registerResponse.rawId,
+          'clientDataJSON': registerResponse.clientDataJSON,
+          'attestationObject': registerResponse.attestationObject,
+          'transports': registerResponse.transports,
+          // 添加 username 到響應中，以便後端可以識別用戶
+          'username': username,
+        };
+        
+        _logger.info('[PasskeyService] ✅ Passkey 註冊成功');
+        return responseMap;
+      } else {
+        // 創建註冊請求
+        final request = _createRegisterRequest(
+          username: username,
+          displayName: displayName,
+          challenge: registrationChallenge['challenge'] ?? _generateChallenge(),
+        );
       
-      // 使用 PasskeyAuthenticator API 註冊
-      final registerResponse = await _authenticator.register(request);
-      
-      _logger.info('[PasskeyService] ✅ Passkey 註冊成功');
-      return registerResponse;
+        // 使用 PasskeyAuthenticator API 註冊
+        final registerResponse = await _authenticator.register(request);
+        
+        // 將 RegisterResponseType 轉換為 Map
+        final responseMap = <String, dynamic>{
+          'id': registerResponse.id,
+          'rawId': registerResponse.rawId,
+          'clientDataJSON': registerResponse.clientDataJSON,
+          'attestationObject': registerResponse.attestationObject,
+          'transports': registerResponse.transports,
+          // 添加 username 到響應中，以便後端可以識別用戶
+          'username': username,
+        };
+        
+        _logger.info('[PasskeyService] ✅ Passkey 註冊成功');
+        return responseMap;
+      }
       
     } on PlatformException catch (e) {
       _logger.warning('[PasskeyService] Passkey 註冊失敗: ${e.message} (${e.code})');
@@ -78,22 +149,54 @@ class PasskeyService {
   /// 使用已存在的 Passkey 進行驗證
   Future<dynamic> authenticate({
     required String email,
+    Map<String, dynamic>? loginChallenge,
   }) async {
     try {
       _logger.info('[PasskeyService] 開始 Passkey 驗證...');
       _logger.info('[PasskeyService] Email: $email');
       
-      // 創建驗證請求
-      final request = _createAuthenticateRequest(
-        relyingPartyId: 'yummyyummy.hiorangecat12888.workers.dev',
-        challenge: _generateChallenge(),
-      );
+      AuthenticateRequestType request;
+      
+      // 檢查是否提供了登入挑戰
+      if (loginChallenge != null && loginChallenge.containsKey('challenge')) {
+        _logger.info('[PasskeyService] 使用提供的登入挑戰...');
+        
+        // 使用提供的登入挑戰創建請求
+        request = AuthenticateRequestType(
+          relyingPartyId: loginChallenge['rpId'] ?? 'yummyyummy.hiorangecat12888.workers.dev',
+          challenge: loginChallenge['challenge'],
+          allowCredentials: [],
+          userVerification: loginChallenge['userVerification'] ?? 'preferred',
+          timeout: loginChallenge['timeout'] ?? 60000,
+          mediation: MediationType.Optional,
+          preferImmediatelyAvailableCredentials: false,
+        );
+      } else {
+        // 創建默認的驗證請求
+        _logger.info('[PasskeyService] 使用默認的登入挑戰...');
+        request = _createAuthenticateRequest(
+          relyingPartyId: 'yummyyummy.hiorangecat12888.workers.dev',
+          challenge: _generateChallenge(),
+        );
+      }
       
       // 使用 PasskeyAuthenticator API 驗證
       final signInResponse = await _authenticator.authenticate(request);
       
+      // 將 AuthenticateResponseType 轉換為 Map，並添加 email
+      final responseMap = <String, dynamic>{
+        'id': signInResponse.id,
+        'rawId': signInResponse.rawId,
+        'clientDataJSON': signInResponse.clientDataJSON,
+        'authenticatorData': signInResponse.authenticatorData,
+        'signature': signInResponse.signature,
+        'userHandle': signInResponse.userHandle,
+        // 添加 email 到響應中，以便後端可以識別用戶
+        'username': email,
+      };
+      
       _logger.info('[PasskeyService] ✅ Passkey 驗證成功');
-      return signInResponse;
+      return responseMap;
       
     } on PlatformException catch (e) {
       _logger.warning('[PasskeyService] Passkey 驗證失敗: ${e.message} (${e.code})');

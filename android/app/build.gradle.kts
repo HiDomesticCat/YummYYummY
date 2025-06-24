@@ -5,6 +5,14 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// 【新增】依賴項目
+dependencies {
+    // Credential Manager API (用於 Passkey 支援)
+    implementation("androidx.credentials:credentials:1.2.0")
+    // 可選：用於 Passkey 的 Google Identity Services
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.0")
+}
+
 android {
     namespace = "com.example.sample_capture_app"
     compileSdk = flutter.compileSdkVersion

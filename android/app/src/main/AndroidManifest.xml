@@ -29,6 +29,20 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            
+            <!-- 【新增】Digital Asset Links 支援 (用於 Passkey) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" 
+                      android:host="yummyyummy.hiorangecat12888.workers.dev" />
+            </intent-filter>
+            
+            <!-- 【新增】Credential Manager API 支援 (用於 Passkey) -->
+            <intent-filter>
+                <action android:name="androidx.credentials.CREDENTIAL_SELECTOR" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

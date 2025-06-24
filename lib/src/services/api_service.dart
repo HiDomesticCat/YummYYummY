@@ -58,7 +58,7 @@ class ApiService {
   // Passkey Registration Flow - For Auth Screen
   // =======================================================================
 
-  /// 【新增】向後端發起 Passkey 註冊請求，以獲取註冊挑戰
+  /// 向後端發起 Passkey 註冊請求，以獲取註冊挑戰
   ///
   /// @param username 使用者提供的唯一識別碼 (通常是 email)
   /// @param displayName 使用者顯示的名稱
@@ -84,7 +84,7 @@ class ApiService {
     }
   }
 
-  /// 【新增】將使用者完成 Passkey 註冊後生成的憑證傳送回後端儲存
+  /// 將使用者完成 Passkey 註冊後生成的憑證傳送回後端儲存
   ///
   /// @param credential 由 `passkeys` 套件返回的註冊結果
   /// @return 一個 Future<bool>，表示後端是否成功儲存憑證
@@ -103,6 +103,56 @@ class ApiService {
     } else {
       _logger.severe('[ApiService] Failed to complete registration: ${response.body}');
       throw Exception('無法完成註冊: ${response.body}');
+    }
+  }
+  
+  // =======================================================================
+  // Passkey Login Flow - For Login Screen
+  // =======================================================================
+  
+  /// 向後端發起 Passkey 登入請求，以獲取登入挑戰
+  ///
+  /// @param username 使用者的電子郵件地址
+  /// @return 從後端收到的 WebAuthn 登入挑戰 (JSON 物件)
+  Future<Map<String, dynamic>> initiateLogin(String username) async {
+    _logger.info('[ApiService] Initiating login for $username...');
+    final uri = Uri.parse('$_baseUrl/login/initiate');
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'username': username,
+      }),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      _logger.info('[ApiService] Login challenge received.');
+      return json.decode(response.body);
+    } else {
+      _logger.severe('[ApiService] Failed to initiate login: ${response.body}');
+      throw Exception('無法從伺服器獲取登入挑戰: ${response.body}');
+    }
+  }
+
+  /// 將使用者完成 Passkey 登入後生成的憑證傳送回後端驗證
+  ///
+  /// @param credential 由 `passkeys` 套件返回的登入結果
+  /// @return 一個 Future<Map<String, dynamic>>，包含登入結果和用戶信息
+  Future<Map<String, dynamic>> completeLogin(Map<String, dynamic> credential) async {
+    _logger.info('[ApiService] Completing login...');
+    final uri = Uri.parse('$_baseUrl/login/complete');
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(credential),
+    ).timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      _logger.info('[ApiService] Login completed successfully on backend.');
+      return json.decode(response.body);
+    } else {
+      _logger.severe('[ApiService] Failed to complete login: ${response.body}');
+      throw Exception('無法完成登入: ${response.body}');
     }
   }
 }

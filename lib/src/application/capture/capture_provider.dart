@@ -9,6 +9,7 @@ import '../../services/image_service.dart';
 import '../../services/location_service.dart';
 import '../../services/native_bridge_service.dart';
 import '../../services/passkey_service.dart';
+import '../../services/user_service.dart';
 import 'capture_provider_state.dart';
 
 class CaptureNotifier extends StateNotifier<CaptureProviderState> {
@@ -46,10 +47,14 @@ class CaptureNotifier extends StateNotifier<CaptureProviderState> {
         throw Exception('從後端收到的挑戰物件格式不正確，期望 Map<String, dynamic>。');
       }
       
+      // 獲取當前用戶的電子郵件
+      final userService = _ref.read(userServiceProvider);
+      final userEmail = userService.currentEmail ?? 'user@example.com';
+      
       final authResults = await Future.wait([
-        // 使用新的 PasskeyService API
+        // 使用用戶的電子郵件進行 Passkey 驗證
         _ref.read(passkeyServiceProvider).authenticate(
-          email: 'user@example.com',  // 使用一個默認的 email，或者從應用程序狀態中獲取
+          email: userEmail,
         ),
         // AttestationService 調用
         _ref.read(attestationServiceProvider).getAttestationToken(nonce: nonce),

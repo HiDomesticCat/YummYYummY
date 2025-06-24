@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/capture/capture_provider.dart';
-import '../../data/capture_data.dart';
 
 /// 結果畫面，用於展示成功捕獲並經過驗證的數據。
 ///

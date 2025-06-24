@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:sample_capture_app/src/presentation/screens/auth_screen.dart';
+import 'package:sample_capture_app/src/presentation/screens/login_screen.dart';
 
 import 'src/presentation/screens/home_page.dart';
 import 'src/presentation/screens/camera_screen.dart';
@@ -38,8 +39,9 @@ class MyApp extends StatelessWidget {
         '/': (context) => const HomePage(),
         '/camera': (context) => const CameraScreen(),
         '/result': (context) => const ResultScreen(),
-        // 【新增】註冊 Passkey 頁面的路由
+        // Passkey 註冊和登入頁面的路由
         '/auth': (context) => const AuthScreen(),
+        '/login': (context) => const LoginScreen(),
       },
     );
   }

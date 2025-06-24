@@ -38,6 +38,9 @@ dependencies:
   # Logging
   logging: ^1.2.0
   
+  # Local Storage
+  shared_preferences: ^2.2.2
+  
   # Icons
   cupertino_icons: ^1.0.6
 
@@ -48,4 +51,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-

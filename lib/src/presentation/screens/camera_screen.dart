@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:camera/camera.dart';
 
-// 匯入我們建立的兩個核心 Provider
+// 匯入我們建立的核心 Provider
 import '../../application/camera/camera_provider.dart';
-// 修正：匯入新的 provider 狀態檔案
 import '../../application/capture/capture_provider.dart';
 import '../../application/capture/capture_provider_state.dart';
-
+import '../../services/user_service.dart';
 
 class CameraScreen extends ConsumerStatefulWidget {
   const CameraScreen({super.key});
@@ -24,7 +23,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
   }
 
   IconData _getFlashIcon(FlashMode mode) {
-      switch (mode) {
+    switch (mode) {
       case FlashMode.off:
         return Icons.flash_off;
       case FlashMode.auto:
@@ -36,7 +35,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
     }
   }
 
-  // 修正：參數類型改為 CaptureStatus
+  // 參數類型為 CaptureStatus
   String _getLoadingMessage(CaptureStatus status) {
     switch (status) {
       case CaptureStatus.requestingNonce:
@@ -52,9 +51,53 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 修正：監聽的類型改為 CaptureProviderState
+    // 檢查用戶是否已登入
+    final userService = ref.watch(userServiceProvider);
+    final isAuthenticated = userService.isAuthenticated;
+    
+    // 如果用戶未登入，顯示提示並提供登入按鈕
+    if (!isAuthenticated) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('需要登入')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.lock, size: 80, color: Colors.orange),
+                const SizedBox(height: 20),
+                const Text(
+                  '您需要先登入才能使用此功能',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  '請使用您的 Passkey 登入以驗證您的身份，然後再嘗試捕獲數據。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 30),
+                ElevatedButton.icon(
+                  onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
+                  icon: const Icon(Icons.login),
+                  label: const Text('前往登入'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                    backgroundColor: Colors.blue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    
+    // 用戶已登入，顯示相機畫面
+    // 監聽 CaptureProviderState 的變化
     ref.listen<CaptureProviderState>(captureProvider, (previous, next) {
-      // 修正：檢查的狀態改為 CaptureStatus
       if (next.status == CaptureStatus.success) {
         Navigator.of(context).pushReplacementNamed('/result');
       } else if (next.status == CaptureStatus.error) {
@@ -65,8 +108,8 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
     });
 
     final cameraState = ref.watch(cameraProvider);
-    final captureProviderState = ref.watch(captureProvider); // 整個 state 物件
-    final captureStatus = captureProviderState.status; // 當前的流程狀態
+    final captureProviderState = ref.watch(captureProvider);
+    final captureStatus = captureProviderState.status;
     final isProcessing = captureStatus != CaptureStatus.initial && captureStatus != CaptureStatus.error;
 
     if (!cameraState.isInitialized || cameraState.controller == null) {
@@ -99,7 +142,6 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
               child: IconButton(
                 icon: const Icon(Icons.camera_alt, color: Colors.white, size: 70),
                 onPressed: isProcessing ? null : () async {
-                  // 修正 use_build_context_synchronously 警告
                   if (!mounted) return;
                   
                   try {
@@ -117,8 +159,7 @@ class _CameraScreenState extends ConsumerState<CameraScreen> {
           ),
           if (isProcessing)
             Container(
-              // 修正 deprecated_member_use 警告
-              color: Colors.black.withAlpha(178), // 70% apha
+              color: Colors.black.withAlpha(178),
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
