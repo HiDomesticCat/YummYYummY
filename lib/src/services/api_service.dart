@@ -2,223 +2,108 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
-import '../data/capture_data.dart';
+import 'package:sample_capture_app/src/data/capture_data.dart';
 
 class ApiService {
   static final _logger = Logger('ApiService');
-  final String _baseUrl = 'https://yummyyummy.hiorangecat12888.workers.dev'; 
+  final String _baseUrl = 'https://yummyyummy.hiorangecat12888.workers.dev';
 
   /// 請求超時時間
   static const Duration _timeout = Duration(seconds: 30);
 
-  /// 向後端請求 WebAuthn 挑戰數據
-  /// 
-  /// 返回的數據將直接傳遞給 PasskeyAuthenticator
-  Future<dynamic> initiateCapture() async {
+  // =======================================================================
+  // Capture (Authentication/Signing) Flow - For Camera Screen
+  // =======================================================================
+
+  /// 向後端請求 WebAuthn 挑戰數據 (用於拍照簽章)
+  Future<Map<String, dynamic>> initiateCapture() async {
     _logger.info('[ApiService] Calling initiateCapture...');
-    try {
-      final uri = Uri.parse('$_baseUrl/api/v1/capture/initiate');
-      
-      final response = await http.get(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'User-Agent': 'SpectraLens-Mobile/1.0',
-        },
-      ).timeout(_timeout);
+    final uri = Uri.parse('$_baseUrl/api/v1/capture/initiate');
+    final response = await http.get(uri, headers: {'Accept': 'application/json'}).timeout(_timeout);
 
-      _logger.info('[ApiService] Response status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        try {
-          final dynamic data = json.decode(response.body);
-          
-          // 驗證回應格式
-          if (data is Map<String, dynamic>) {
-            if (!data.containsKey('challenge')) {
-              _logger.warning('[ApiService] Response missing challenge field');
-              throw FormatException('後端回應缺少 challenge 欄位');
-            }
-            _logger.info('[ApiService] Got valid WebAuthn challenge');
-            _logger.fine('[ApiService] Challenge keys: ${data.keys.toList()}');
-          } else {
-            _logger.warning('[ApiService] Unexpected response format: ${data.runtimeType}');
-          }
-          
-          return data; // 返回原始數據供 PasskeyAuthenticator 使用
-        } catch (e) {
-          _logger.severe('[ApiService] Failed to parse response body: $e');
-          throw FormatException('無法解析後端回應: $e');
-        }
-      } else {
-        final errorMsg = 'HTTP ${response.statusCode}: ${response.body}';
-        _logger.severe('[ApiService] Server error: $errorMsg');
-        
-        // 根據狀態碼提供更具體的錯誤信息
-        switch (response.statusCode) {
-          case 400:
-            throw Exception('請求格式錯誤');
-          case 401:
-            throw Exception('未授權訪問');
-          case 403:
-            throw Exception('禁止訪問');
-          case 404:
-            throw Exception('API 端點不存在');
-          case 500:
-            throw Exception('伺服器內部錯誤');
-          case 503:
-            throw Exception('伺服器暫時不可用');
-          default:
-            throw Exception('網絡請求失敗: $errorMsg');
-        }
-      }
-    } on FormatException {
-      rethrow;
-    } catch (e) {
-      _logger.severe('[ApiService] Error during initiateCapture: $e');
-      
-      if (e.toString().contains('timeout')) {
-        throw Exception('請求超時，請檢查網絡連接');
-      } else if (e.toString().contains('SocketException')) {
-        throw Exception('網絡連接失敗，請檢查網絡設定');
-      }
-      
-      rethrow;
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      _logger.severe('[ApiService] Failed to initiate capture: ${response.body}');
+      throw Exception('無法從伺服器獲取簽章挑戰');
     }
   }
 
   /// 從 WebAuthn 挑戰中提取 nonce 用於 AttestationService
   String extractNonce(dynamic webAuthnChallenge) {
-    try {
-      if (webAuthnChallenge is Map<String, dynamic>) {
-        final String? challenge = webAuthnChallenge['challenge'] as String?;
-        if (challenge == null || challenge.isEmpty) {
-          throw FormatException('WebAuthn 挑戰中的 challenge 欄位為空');
-        }
-        return challenge;
-      } else {
-        throw FormatException('WebAuthn 挑戰格式不正確: ${webAuthnChallenge.runtimeType}');
-      }
-    } catch (e) {
-      _logger.severe('[ApiService] Error extracting nonce: $e');
-      rethrow;
+    if (webAuthnChallenge is Map<String, dynamic>) {
+      final String? challenge = webAuthnChallenge['challenge'] as String?;
+      if (challenge != null) return challenge;
     }
+    throw const FormatException('從後端收到的挑戰物件格式不正確');
   }
 
   /// 提交捕獲數據到後端
   Future<bool> submitCapture(CaptureData data) async {
     _logger.info('[ApiService] Calling submitCapture...');
-    try {
-      final uri = Uri.parse('$_baseUrl/api/v1/capture/submit');
-      final request = http.MultipartRequest('POST', uri);
-
-      // 添加 headers
-      request.headers.addAll({
-        'Accept': 'application/json',
-        'User-Agent': 'SpectraLens-Mobile/1.0',
-      });
-
-      // 添加表單字段（排除 imageBytes）
-      final jsonData = data.toJson();
-      jsonData.forEach((key, value) {
-        if (key != 'imageBytes') {
-          request.fields[key] = value.toString();
-        }
-      });
-
-      // 添加額外的元數據
-      request.fields['clientTimestamp'] = data.clientTimestamp.toIso8601String();
-      request.fields['uploadVersion'] = '1.0';
-
-      // 添加圖片文件
-      request.files.add(http.MultipartFile.fromBytes(
-        'photo', // 確保與後端 API 期望的字段名一致
+    final uri = Uri.parse('$_baseUrl/api/v1/capture/submit');
+    final request = http.MultipartRequest('POST', uri)
+      ..fields.addAll(data.toJson().map((key, value) => MapEntry(key, value.toString())))
+      ..files.add(http.MultipartFile.fromBytes(
+        'photo',
         data.imageBytes,
         filename: 'capture_${DateTime.now().millisecondsSinceEpoch}.jpg',
       ));
 
-      _logger.info('[ApiService] Uploading ${data.imageBytes.length} bytes');
+    final streamedResponse = await request.send().timeout(_timeout);
+    return streamedResponse.statusCode == 200;
+  }
 
-      final streamedResponse = await request.send().timeout(_timeout);
-      final response = await http.Response.fromStream(streamedResponse);
+  // =======================================================================
+  // Passkey Registration Flow - For Auth Screen
+  // =======================================================================
 
-      _logger.info('[ApiService] Upload response status: ${response.statusCode}');
+  /// 【新增】向後端發起 Passkey 註冊請求，以獲取註冊挑戰
+  ///
+  /// @param username 使用者提供的唯一識別碼 (通常是 email)
+  /// @param displayName 使用者顯示的名稱
+  /// @return 從後端收到的 WebAuthn 註冊挑戰 (JSON 物件)
+  Future<Map<String, dynamic>> initiateRegistration(String username, String displayName) async {
+    _logger.info('[ApiService] Initiating registration for $username...');
+    final uri = Uri.parse('$_baseUrl/register/initiate');
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'username': username,
+        'displayName': displayName,
+      }),
+    ).timeout(_timeout);
 
-      if (response.statusCode == 200) {
-        try {
-          final responseData = json.decode(response.body);
-          _logger.info('[ApiService] Submission successful');
-          _logger.fine('[ApiService] Response: $responseData');
-          
-          // 檢查後端的成功標記
-          if (responseData is Map<String, dynamic>) {
-            final bool? success = responseData['success'] as bool?;
-            final bool? verified = responseData['verified'] as bool?;
-            
-            if (success == true || verified == true) {
-              return true;
-            } else {
-              _logger.warning('[ApiService] Backend verification failed: ${responseData['message'] ?? 'Unknown reason'}');
-              return false;
-            }
-          }
-          
-          return true; // 默認成功
-        } catch (e) {
-          _logger.warning('[ApiService] Failed to parse success response: $e');
-          return true; // 如果無法解析但狀態碼是 200，假設成功
-        }
-      } else {
-        final errorMsg = 'HTTP ${response.statusCode}: ${response.body}';
-        _logger.warning('[ApiService] Submission failed: $errorMsg');
-        return false;
-      }
-    } catch (e) {
-      _logger.severe('[ApiService] Error during submitCapture: $e');
-      
-      if (e.toString().contains('timeout')) {
-        throw Exception('上傳超時，請檢查網絡連接');
-      }
-      
-      rethrow;
+    if (response.statusCode == 200) {
+      _logger.info('[ApiService] Registration challenge received.');
+      return json.decode(response.body);
+    } else {
+      _logger.severe('[ApiService] Failed to initiate registration: ${response.body}');
+      throw Exception('無法從伺服器獲取註冊挑戰: ${response.body}');
     }
   }
 
-  /// 檢查 API 服務健康狀態
-  Future<bool> checkHealth() async {
-    try {
-      _logger.info('[ApiService] Checking service health...');
-      
-      final uri = Uri.parse('$_baseUrl/health');
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final bool isHealthy = data['status'] == 'healthy' || data['status'] == 'ok';
-        _logger.info('[ApiService] Service health: ${isHealthy ? 'healthy' : 'unhealthy'}');
-        return isHealthy;
-      }
-      
-      return false;
-    } catch (e) {
-      _logger.warning('[ApiService] Health check failed: $e');
-      return false;
-    }
-  }
+  /// 【新增】將使用者完成 Passkey 註冊後生成的憑證傳送回後端儲存
+  ///
+  /// @param credential 由 `passkeys` 套件返回的註冊結果
+  /// @return 一個 Future<bool>，表示後端是否成功儲存憑證
+  Future<bool> completeRegistration(Map<String, dynamic> credential) async {
+    _logger.info('[ApiService] Completing registration...');
+    final uri = Uri.parse('$_baseUrl/register/complete');
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(credential),
+    ).timeout(_timeout);
 
-  /// 獲取服務配置信息
-  Map<String, dynamic> getServiceInfo() {
-    return {
-      'baseUrl': _baseUrl,
-      'timeout': _timeout.inSeconds,
-      'version': '1.0',
-      'endpoints': {
-        'initiate': '$_baseUrl/api/v1/capture/initiate',
-        'submit': '$_baseUrl/api/v1/capture/submit',
-        'health': '$_baseUrl/health',
-      },
-    };
+    if (response.statusCode == 200) {
+      _logger.info('[ApiService] Registration completed successfully on backend.');
+      return true;
+    } else {
+      _logger.severe('[ApiService] Failed to complete registration: ${response.body}');
+      throw Exception('無法完成註冊: ${response.body}');
+    }
   }
 }
 

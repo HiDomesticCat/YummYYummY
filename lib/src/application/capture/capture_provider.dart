@@ -47,11 +47,11 @@ class CaptureNotifier extends StateNotifier<CaptureProviderState> {
       }
       
       final authResults = await Future.wait([
-        // ✅ 正確的 PasskeyService 調用方式
+        // 使用新的 PasskeyService API
         _ref.read(passkeyServiceProvider).authenticate(
-          webAuthnChallenge: webAuthnChallenge,  // 直接傳遞完整的 webAuthnChallenge
+          email: 'user@example.com',  // 使用一個默認的 email，或者從應用程序狀態中獲取
         ),
-        // ✅ 正確的 AttestationService 調用方式
+        // AttestationService 調用
         _ref.read(attestationServiceProvider).getAttestationToken(nonce: nonce),
       ]);
       

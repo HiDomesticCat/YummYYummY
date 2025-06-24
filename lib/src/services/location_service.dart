@@ -23,18 +23,11 @@ class LocationService {
       return Future.error('位置權限已被永久拒絕，我們無法請求權限。請在 App 設定中手動開啟。');
     }
 
-    // --- 以下是修正部分 ---
-    // 建立一個 LocationSettings 物件來設定精度
-    const LocationSettings locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high, // 我們需要高精度
-      distanceFilter: 10, // 位置更新之間的最小距離（米）
-    );
-
-    // 將 settings 物件傳入 getCurrentPosition
+    // 使用正確的參數獲取當前位置
     return await Geolocator.getCurrentPosition(
-      locationSettings: locationSettings,
+      desiredAccuracy: LocationAccuracy.high, // 我們需要高精度
+      timeLimit: const Duration(seconds: 30), // 設定超時時間
     );
-    // --- 修正結束 ---
   }
 }
 

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-// 匯入 CaptureProvider 以讀取捕獲的數據
-// 我們需要修改 CaptureState 來包含最後一次成功的數據
+import '../../application/capture/capture_provider.dart';
+import '../../data/capture_data.dart';
 
 /// 結果畫面，用於展示成功捕獲並經過驗證的數據。
 ///
@@ -13,21 +12,31 @@ class ResultScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 訂閱 CaptureProvider 的狀態
-    // 假設 CaptureState 中有一個 lastSuccessfulData 屬性
-    // final lastCaptureData = ref.watch(captureProvider.select((state) => state.lastSuccessfulData));
-
-    // --- 為了 PoC 演示，我們暫時使用靜態的模擬數據 ---
-    // 在真實應用中，您應該從上面的 provider 中讀取真實數據
-    final mockData = {
-      'pHash': 'f8c3c7e1e3c3c3c3',
-      'gps': '25.0330° N, 121.5654° E',
-      'isMocked': '否 (已驗證)',
+    // 訂閱 CaptureProvider 的狀態，獲取最後一次成功的數據
+    final lastCaptureData = ref.watch(captureProvider.select((state) => state.lastSuccessfulData));
+    
+    // 如果沒有數據，顯示錯誤信息
+    if (lastCaptureData == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('錯誤'),
+          backgroundColor: Colors.red[100],
+        ),
+        body: const Center(
+          child: Text('沒有可顯示的數據，請先完成數據捕獲流程。'),
+        ),
+      );
+    }
+    
+    // 從捕獲的數據中提取信息
+    final captureData = {
+      'pHash': lastCaptureData.pHash,
+      'gps': '${lastCaptureData.latitude}° N, ${lastCaptureData.longitude}° E',
+      'isMocked': lastCaptureData.isMocked ? '是 (警告)' : '否 (已驗證)',
       'passkeyVerified': '成功',
       'integrityVerified': '成功',
-      'timestamp': DateTime.now().toIso8601String(),
+      'timestamp': lastCaptureData.clientTimestamp.toIso8601String(),
     };
-    // ------------------------------------------------
 
     return Scaffold(
       appBar: AppBar(
@@ -65,35 +74,56 @@ class ResultScreen extends ConsumerWidget {
                   _buildResultTile(
                     icon: Icons.fingerprint,
                     title: 'pHash 感知雜湊值',
-                    subtitle: mockData['pHash']!,
+                    subtitle: captureData['pHash']!,
                   ),
                   _buildResultTile(
                     icon: Icons.location_on,
                     title: 'GPS 位置',
-                    subtitle: mockData['gps']!,
+                    subtitle: captureData['gps']!,
                   ),
                   _buildResultTile(
                     icon: Icons.developer_mode,
                     title: 'GPS 模擬狀態',
-                    subtitle: mockData['isMocked']!,
-                    valueColor: Colors.green,
+                    subtitle: captureData['isMocked']!,
+                    valueColor: lastCaptureData.isMocked ? Colors.red : Colors.green,
                   ),
                   _buildResultTile(
                     icon: Icons.security,
                     title: 'Passkey 操作簽名驗證',
-                    subtitle: mockData['passkeyVerified']!,
+                    subtitle: captureData['passkeyVerified']!,
                     valueColor: Colors.green,
                   ),
                   _buildResultTile(
                     icon: Icons.verified_user,
                     title: '裝置與應用程式完整性 (Play Integrity)',
-                    subtitle: mockData['integrityVerified']!,
+                    subtitle: captureData['integrityVerified']!,
                     valueColor: Colors.green,
                   ),
                   _buildResultTile(
                     icon: Icons.access_time,
                     title: '伺服器端信任時間戳',
-                    subtitle: mockData['timestamp']!,
+                    subtitle: captureData['timestamp']!,
+                  ),
+                  // 顯示圖片
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Text(
+                            '捕獲的圖片',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        Image.memory(
+                          lastCaptureData.imageBytes,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

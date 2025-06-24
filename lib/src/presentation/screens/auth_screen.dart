@@ -1,143 +1,139 @@
+import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sample_capture_app/src/services/passkey_service.dart';
 
-// 假設我們在 application 層建立了一個 auth_provider 來處理註冊邏輯
-// import '../../application/auth/auth_provider.dart';
-
-// --- 為了 PoC 演示，我們先定義一個簡單的 Provider 和狀態 ---
-// 在真實專案中，您應該將此邏輯移至 'application/auth/auth_provider.dart'
-
-enum AuthScreenState { initial, registering, success, error }
-
-final authScreenProvider = StateNotifierProvider<AuthScreenNotifier, AuthScreenState>((ref) {
-  return AuthScreenNotifier();
-});
-
-class AuthScreenNotifier extends StateNotifier<AuthScreenState> {
-  AuthScreenNotifier() : super(AuthScreenState.initial);
-
-  Future<void> registerPasskey({required String username}) async {
-    if (username.isEmpty) {
-      state = AuthScreenState.error;
-      return;
-    }
-    try {
-      state = AuthScreenState.registering;
-      // 1. 呼叫 ApiService 從後端獲取註冊用的 Challenge
-      // 2. 呼叫 PasskeyService，傳入 Challenge，觸發平台原生 UI 進行註冊
-      // 3. 呼叫 ApiService 將註冊結果回傳給後端儲存
-      
-      // 模擬一個網路延遲和成功結果
-      await Future.delayed(const Duration(seconds: 3));
-      
-      state = AuthScreenState.success;
-    } catch (e) {
-      state = AuthScreenState.error;
-    }
-  }
-}
-// ----------------------------------------------------
-
-
-/// 認證畫面，用於使用者註冊 Passkey。
-///
-/// 這是使用者首次設定無密碼登入或簽章的入口。
-class AuthScreen extends ConsumerWidget {
+/// Passkey 註冊畫面
+class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // 為了在回呼函數中使用，我們需要一個 TextEditingController
-    final usernameController = TextEditingController();
+  ConsumerState<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends ConsumerState<AuthScreen> {
+  final _usernameController = TextEditingController(text: 'testuser@example.com');
+  final _displayNameController = TextEditingController(text: 'Test User');
+  final _formKey = GlobalKey<FormState>();
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _displayNameController.dispose();
+    super.dispose();
+  }
+  
+  /// 生成隨機挑戰
+  String _generateChallenge() {
+    final random = Random.secure();
+    final values = List<int>.generate(32, (i) => random.nextInt(256));
+    // 移除 Base64URL 編碼中的填充字符 ('=')
+    return base64Url.encode(values).replaceAll('=', '');
+  }
+
+  /// 處理 Passkey 註冊的完整流程
+  Future<void> _handleRegister() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    setState(() => _isLoading = true);
     
-    // 監聽狀態變化以顯示 SnackBar
-    ref.listen<AuthScreenState>(authScreenProvider, (previous, next) {
-      if (next == AuthScreenState.success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Passkey 建立成功！'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        // 成功後可以返回上一頁
-        Navigator.of(context).pop();
-      } else if (next == AuthScreenState.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Passkey 建立失敗，請重試。'),
-            backgroundColor: Colors.red,
-          ),
-        );
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    try {
+      // 步驟 1: 準備註冊數據
+      messenger.showSnackBar(const SnackBar(content: Text('步驟 1/2: 正在準備註冊數據...')));
+      final registrationChallenge = {
+        'username': _usernameController.text.trim(),
+        'displayName': _displayNameController.text.trim(),
+        'challenge': _generateChallenge(),
+      };
+
+      // 步驟 2: 呼叫 Passkey 服務，觸發原生 UI (指紋/臉部辨識)
+      messenger.showSnackBar(const SnackBar(content: Text('步驟 2/2: 請依照系統提示完成驗證...')));
+      final credential = await ref
+          .read(passkeyServiceProvider)
+          .register(registrationChallenge: registrationChallenge);
+
+      messenger.showSnackBar(const SnackBar(
+        content: Text('🎉 Passkey 註冊成功！'),
+        backgroundColor: Colors.green,
+      ));
+      navigator.pop(); // 註冊成功後返回首頁
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('❌ 註冊失敗: $e'),
+        backgroundColor: Colors.red,
+      ));
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
-    });
+    }
+  }
 
-    // 訂閱狀態以更新 UI
-    final authState = ref.watch(authScreenProvider);
-    final isRegistering = authState == AuthScreenState.registering;
-
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('設定 Passkey 驗證'),
-      ),
+      appBar: AppBar(title: const Text('註冊一個新的 Passkey')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Icon(
-              Icons.fingerprint,
-              size: 80,
-              color: Colors.deepPurple,
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              '建立您的數位金鑰',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Passkey 將安全地儲存在您的裝置上，讓您可以使用指紋或臉部辨識來進行操作驗證，無需記憶密碼，更加安全便捷。',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.black54),
-            ),
-            const Divider(height: 40),
-            
-            // Passkey 註冊需要綁定一個使用者名稱
-            TextField(
-              controller: usernameController,
-              decoration: const InputDecoration(
-                labelText: '使用者名稱',
-                border: OutlineInputBorder(),
-                hintText: '例如：user@example.com',
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Icon(Icons.fingerprint, size: 80, color: Colors.deepPurple),
+              const SizedBox(height: 20),
+              Text('建立您的數位金鑰', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 16),
+              const Text(
+                'Passkey 將安全地儲存在您的裝置上，讓您可以使用指紋或臉部辨識來進行登入，無需記憶密碼。',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.black54),
               ),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 24),
-            
-            // 註冊按鈕
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                textStyle: const TextStyle(fontSize: 18),
+              const Divider(height: 40),
+              
+              TextFormField(
+                controller: _usernameController,
+                decoration: const InputDecoration(
+                  labelText: '使用者名稱 (Email)',
+                  border: OutlineInputBorder(),
+                  hintText: 'user@example.com',
+                ),
+                keyboardType: TextInputType.emailAddress,
+                validator: (value) => (value == null || !value.contains('@')) ? '請輸入有效的 Email' : null,
               ),
-              // 如果正在註冊中，則禁用按鈕
-              onPressed: isRegistering
-                  ? null
-                  : () {
-                      // 觸發註冊流程
-                      ref.read(authScreenProvider.notifier)
-                         .registerPasskey(username: usernameController.text);
-                    },
-              child: isRegistering
-                  ? const SizedBox(
-                      height: 24,
-                      width: 24,
-                      child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white),
-                    )
-                  : const Text('建立 Passkey'),
-            ),
-          ],
+              const SizedBox(height: 16),
+              
+              TextFormField(
+                controller: _displayNameController,
+                decoration: const InputDecoration(
+                  labelText: '顯示名稱',
+                  border: OutlineInputBorder(),
+                  hintText: '您的暱稱',
+                ),
+                validator: (value) => (value == null || value.isEmpty) ? '請輸入顯示名稱' : null,
+              ),
+              const SizedBox(height: 24),
+              
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                onPressed: _isLoading ? null : _handleRegister,
+                icon: _isLoading 
+                  ? const SizedBox.shrink() 
+                  : const Icon(Icons.app_registration),
+                label: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('開始註冊 Passkey'),
+              ),
+            ],
+          ),
         ),
       ),
     );
